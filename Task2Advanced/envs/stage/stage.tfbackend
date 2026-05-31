@@ -1,0 +1,14 @@
+bucket = "terraform-state-b1go6bu7fgndh1mvb8gp"
+key    = "stage/terraform.tfstate"
+region = "ru-central1"
+
+skip_region_validation      = true
+skip_credentials_validation = true
+skip_requesting_account_id  = true
+skip_s3_checksum            = true
+
+# access_key / secret_key — через переменные окружения:
+#   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+#
+# endpoint — через -backend-config в CI/CD:
+#   terraform init -backend-config=... -backend-config="endpoints={s3=\"$MINIO_ENDPOINT\"}"

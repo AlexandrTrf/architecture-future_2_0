@@ -1,0 +1,83 @@
+@startuml C4_Containers_Future2
+!includeurl https://raw.githubusercontent.com/RicardoNiepel/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_TOP_DOWN()
+
+
+title "Будущее 2.0" — Целевая архитектура (горизонт 3 года)
+
+' ===== Актор =====
+Person(employee, "Сотрудник компании", "Строит отчёты, ищет\nданные в каталоге")
+
+System_Ext(ext_integ, "Внешние интеграции", "Поставщики лекарств, производители оборудования и т.д.")
+
+System_Boundary(future_2_0, "Будущее 2.0") {
+
+    ' ============================================================
+    ' АНАЛИТИЧЕСКИЙ СЛОЙ (портал самообслуживания)
+    ' ============================================================
+    Boundary(portal, "Портал самообслуживания") {
+        Container(bi, "BI Portal", "Power BI", "Визуализация, ad-hoc отчёты,\nконструктор дашбордов")
+        Container(catalog, "Data Catalog", "DataHub", "Каталог витрин, метаданные,\nlineage, поиск данных\n(собственный веб-интерфейс)")
+    }
+
+    ' ============================================================
+    ' ПЛАТФОРМЕННЫЙ СЛОЙ
+    ' ============================================================
+    Boundary(platform, "Data Platform") {
+        Container(iam, "IAM", "Keycloak", "Аутентификация,\nавторизация, RBAC")
+        Container(kafka, "Event Broker", "Apache Kafka", "Центральная шина событий.\nМеждоменное взаимодействие")
+        Container(trino, "Federated Query Engine", "Starburst / Trino", "Кросс-доменные федеративные\nзапросы к витринам доменов")
+        Container(gateway, "Gateway", "Kong", "Маршрутизация, Rate limiting, авторизация")
+    }
+
+    ' ============================================================
+    ' ОБОБЩЁННЫЙ ДОМЕН (паттерн)
+    ' ============================================================
+    Boundary(domain, "Бизнес-домен (паттерн)\nМед. услуги | Финтех | Корп. финансы | Операции | ИИ-сервисы") {
+        Container(domain_svc, "Domain Service", "Java / Python /\nGolang", "Бизнес-логика домена")
+        ContainerDb(domain_db, "Domain DB", "PostgreSQL", "Операционные данные домена")
+        Container(domain_flink, "Domain Stream Processing", "Apache Flink", "Потоковая трансформация событий домена\nзапись в Lakehouse и ClickHouse")
+        ContainerDb(domain_lake, "Domain Data Lakehouse", "Apache Iceberg/Object Storage", "Полные данные домена,\nисторические срезы")
+        ContainerDb(domain_dwh, "Domain OLAP Store", "ClickHouse", "near-realtime дашборды")
+    }
+
+
+}
+
+Lay_D(portal, platform)
+Lay_D(platform, domain)
+
+
+Rel_D(employee, bi, "Строит и просматривает отчёты")
+Rel_D(employee, catalog, "Ищет витрины, смотрит\nметаданные и lineage")
+
+
+Rel_R(bi, iam, "Проверка прав доступа")
+Rel_L(catalog, iam, "Проверка прав доступа")
+
+
+Rel_D(bi, trino, "SQL (DirectQuery)")
+
+
+Rel_D(trino, domain_dwh, "Федеративные запросы")
+Rel_D(trino, domain_lake, "Федеративные запросы (ad-hoc аналитика)")
+
+' ===== Связи: Внутри домена =====
+Rel_D(domain_svc, domain_db, "CRUD")
+Rel_R(domain_db, kafka, "CDC (Debezium / Outbox)")
+
+Rel_U(domain_flink, catalog, "Отправка lineage")
+Rel_D(domain_flink, domain_lake, "Трансформированные события")
+Rel_D(domain_flink, domain_dwh, "Горячие агрегаты")
+Rel_U(domain_svc, kafka, "Публикация событий")
+Rel_U(kafka, domain_svc, "Подписка на события")
+Rel_D(kafka, domain_flink, "События")
+Rel(domain_lake, domain_dwh, "Репликация ист.срезов")
+
+
+
+Rel(ext_integ, gateway, "HTTPS REST")
+Rel_D(gateway, domain_svc, "Транслирует запросы")
+
+@enduml

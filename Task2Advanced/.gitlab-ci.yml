@@ -1,0 +1,126 @@
+stages:
+  - validate
+  - plan
+  - apply
+
+variables:
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_yc_token: $YC_TOKEN
+  TF_VAR_cloud_id: $YC_CLOUD_ID
+  TF_VAR_folder_id: $YC_FOLDER_ID
+  TF_LOG: DEBUG
+
+.terraform_base:
+  tags:
+    - shell
+  before_script:
+    - terraform version
+
+validate:
+  stage: validate
+  extends: .terraform_base
+  script:
+    - terraform fmt -check -recursive
+    - terraform init -backend=false
+    - terraform validate
+
+.plan_template:
+  stage: plan
+  extends: .terraform_base
+  script:
+    - terraform version
+    - Write-Host "=== YC VARIABLES ==="
+    - Write-Host "YC_CLOUD_ID = [$env:YC_CLOUD_ID]"
+    - Write-Host "YC_FOLDER_ID = [$env:YC_FOLDER_ID]"
+    - Write-Host "YC_TOKEN length = $($env:YC_TOKEN.Length)"
+    - Write-Host "=== S3 VARIABLES ==="
+    - Write-Host "S3_ENDPOINT = [$env:S3_ENDPOINT]"
+    - Write-Host "S3_BUCKET = [$env:S3_BUCKET]"
+    - Write-Host "AWS_ACCESS_KEY_ID length = $($env:AWS_ACCESS_KEY_ID.Length)"
+    - Write-Host "AWS_SECRET_ACCESS_KEY length = $($env:AWS_SECRET_ACCESS_KEY.Length)"
+    - Write-Host "TF_VAR_yc_token length = $($env:TF_VAR_yc_token.Length)"
+    - Write-Host "TF_VAR_cloud_id = [$env:TF_VAR_cloud_id]"
+    - Write-Host "TF_VAR_folder_id = [$env:TF_VAR_folder_id]"
+    - Write-Host "TF_VAR_yc_token first 10 chars = $($env:TF_VAR_yc_token.Substring(0,10))"
+    
+    - terraform init -reconfigure `
+        -backend-config="./envs/$env:ENV/$env:ENV.tfbackend" `
+        -backend-config="endpoint=$env:S3_ENDPOINT" `
+        -backend-config="bucket=$env:S3_BUCKET" `
+        -backend-config="access_key=$env:AWS_ACCESS_KEY_ID" `
+        -backend-config="secret_key=$env:AWS_SECRET_ACCESS_KEY" `
+        -backend-config="region=ru-central1" `
+        -backend-config="skip_region_validation=true" `
+        -backend-config="skip_credentials_validation=true" `
+        -backend-config="skip_requesting_account_id=true"
+
+    - terraform plan `
+        -var-file="./envs/$env:ENV/terraform.tfvars" `
+        -out="plan_$env:ENV.tfplan"
+
+  artifacts:
+    paths:
+      - plan_*.tfplan
+    expire_in: 1 hour
+
+plan_dev:
+  extends: .plan_template
+  variables:
+    ENV: dev
+
+plan_stage:
+  extends: .plan_template
+  variables:
+    ENV: stage
+
+plan_prod:
+  extends: .plan_template
+  variables:
+    ENV: prod
+
+.apply_template:
+  stage: apply
+  extends: .terraform_base
+  script:
+    - terraform init -reconfigure `
+        -backend-config="./envs/$env:ENV/$env:ENV.tfbackend" `
+        -backend-config="endpoint=$env:S3_ENDPOINT" `
+        -backend-config="bucket=$env:S3_BUCKET" `
+        -backend-config="access_key=$env:AWS_ACCESS_KEY_ID" `
+        -backend-config="secret_key=$env:AWS_SECRET_ACCESS_KEY" `
+        -backend-config="region=ru-central1" `
+        -backend-config="skip_region_validation=true" `
+        -backend-config="skip_credentials_validation=true" `
+        -backend-config="skip_requesting_account_id=true"
+
+    - terraform apply -input=false "plan_$env:ENV.tfplan"
+
+  when: manual
+  allow_failure: false
+
+apply_dev:
+  extends: .apply_template
+  variables:
+    ENV: dev
+  needs:
+    - plan_dev
+  environment:
+    name: dev
+
+apply_stage:
+  extends: .apply_template
+  variables:
+    ENV: stage
+  needs:
+    - plan_stage
+  environment:
+    name: stage
+
+apply_prod:
+  extends: .apply_template
+  variables:
+    ENV: prod
+  needs:
+    - plan_prod
+  environment:
+    name: prod
